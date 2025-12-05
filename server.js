@@ -1,5 +1,6 @@
 require("dotenv").config();
 const express = require("express");
+const cors = require("cors");
 const axios = require("axios");
 const path = require('path');
 
@@ -16,19 +17,16 @@ const TAIWAN_CITIES = [
   "屏東縣", "宜蘭縣", "花蓮縣", "臺東縣", "澎湖縣", "金門縣", "連江縣"
 ];
 
-// 1. 強制關閉 304 快取機制 (關鍵修改)
-app.set('etag', false);
-
-// 2. 手動暴力設定 CORS 與 快取控制 Header (關鍵修改)
+// --- 關鍵修改：手動設定 Header 禁止快取 & 允許跨域 ---
 app.use((req, res, next) => {
+    // 1. 允許跨域 (CORS)
     res.header("Access-Control-Allow-Origin", "*");
-    res.header("Access-Control-Allow-Methods", "GET,HEAD,OPTIONS,POST,PUT");
-    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
     
-    // 告訴瀏覽器：絕對不要快取這個回應！
-    res.header("Cache-Control", "no-cache, no-store, must-revalidate");
-    res.header("Pragma", "no-cache");
-    res.header("Expires", "0");
+    // 2. 禁止快取 (解決 304 問題)
+    res.header("Cache-Control", "no-cache, no-store, must-revalidate"); // HTTP 1.1
+    res.header("Pragma", "no-cache"); // HTTP 1.0
+    res.header("Expires", "0"); // Proxies
     
     next();
 });
@@ -36,22 +34,18 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 取得指定城市天氣
 const getCityWeather = async (req, res) => {
   let locationName = decodeURIComponent(req.params.city);
-  
-  if (!TAIWAN_CITIES.includes(locationName)) {
-      return res.status(400).json({ error: "無效的縣市名稱" });
-  }
+  // 處理 undefined
+  if (!locationName || locationName === 'undefined') locationName = '臺北市';
+  if (!TAIWAN_CITIES.includes(locationName)) locationName = '臺北市';
 
   try {
     if (!CWA_API_KEY) throw new Error("API Key 未設定");
 
     const response = await axios.get(
       `${CWA_API_BASE_URL}/v1/rest/datastore/F-C0032-001`,
-      {
-        params: { Authorization: CWA_API_KEY, locationName: locationName },
-      }
+      { params: { Authorization: CWA_API_KEY, locationName: locationName } }
     );
 
     const locationData = response.data.records.location.find(loc => loc.locationName === locationName);
@@ -64,12 +58,11 @@ const getCityWeather = async (req, res) => {
     };
 
     const weatherElements = locationData.weatherElement;
-    for (let i = 0; i < 3; i++) { // API 只回傳 3 個時段
+    for (let i = 0; i < 3; i++) { 
       const forecast = {};
       weatherElements.forEach((element) => {
         const value = element.time[i].parameter;
         forecast.startTime = element.time[i].startTime;
-        forecast.endTime = element.time[i].endTime;
         switch (element.elementName) {
           case "Wx": forecast.weather = value.parameterName; break;
           case "PoP": forecast.rain = value.parameterName + "%"; break;
@@ -80,7 +73,7 @@ const getCityWeather = async (req, res) => {
       });
       weatherData.forecasts.push(forecast);
     }
-
+    // 移除 res.setHeader('Content-Type'...)，Express 會自動處理
     res.json({ success: true, data: weatherData });
 
   } catch (error) {
@@ -89,7 +82,6 @@ const getCityWeather = async (req, res) => {
   }
 };
 
-// Routes
 app.get("/api/cities", (req, res) => {
     res.json({ success: true, cities: TAIWAN_CITIES });
 });
