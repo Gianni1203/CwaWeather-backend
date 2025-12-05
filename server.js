@@ -123,7 +123,6 @@ const getCityWeather = async (req, res) => {
 
       weatherData.forecasts.push(forecast);
     }
-    res.setHeader('Content-Type', 'application/json'); // 👈 新增這行
     res.json({
       success: true,
       data: weatherData,
@@ -154,7 +153,6 @@ const getCityWeather = async (req, res) => {
 
 // 修正後的程式碼：明確設定 Content-Type
 app.get("/api/cities", (req, res) => {
-    res.setHeader('Content-Type', 'application/json'); // 👈 新增這行
     res.json({
         success: true,
         cities: TAIWAN_CITIES,
